@@ -442,6 +442,9 @@ end
 function conflate_beliefs(control::ConflateJoint, beliefs::Vector)
     conflate_beliefs(control.joint_problem, beliefs)
 end
+function conflate_beliefs(control::Conflation, beliefs::Vector)
+    conflate_beliefs(control.joint_problem, beliefs)
+end
 
 function conflate_beliefs(pomdp::POMDP, beliefs::Vector)
     # Component product of the beliefs
