@@ -104,16 +104,18 @@ Base.length(eb::EstimatedBelief) = length(eb.beliefs)
 
 MCAS using clongation to combine the beliefs.
 """
-struct Conflation{S, A, O} <: MultiAgentControlStrategy
-    joint_problem::POMDP{S, A, O}
-    joint_policy::AlphaVectorPolicy
-    indiv_control::Vector{SinglePolicy{S, A, O}}
-    surrogate_beliefs::Dict{Int, EstimatedBelief}
-    prune_option::Symbol
-    joint_belief_delta::Float64
-    single_belief_delta::Float64
-    max_surrogate_beliefs::Dict{Int, Int}
-    selection_option::Symbol
+mutable struct Conflation{S, A, O} <: MultiAgentControlStrategy
+    const joint_problem::POMDP{S, A, O}
+    const joint_policy::AlphaVectorPolicy
+    const indiv_control::Vector{SinglePolicy{S, A, O}}
+    const surrogate_beliefs::Dict{Int, EstimatedBelief}
+    const prune_option::Symbol
+    const joint_belief_delta::Float64
+    const single_belief_delta::Float64
+    const max_surrogate_beliefs::Dict{Int, Int}
+    const selection_option::Symbol
+    const weight_option::Symbol
+    prev_selected_belief::Union{Nothing, DiscreteBelief, SparseCat, Vector{Float64}}
 end
 function Conflation(
     joint_problem::POMDP{S, A, O},
@@ -124,7 +126,8 @@ function Conflation(
     joint_belief_delta::Float64=0.0,
     single_belief_delta::Float64=0.0,
     max_surrogate_beliefs::Union{Int, Dict{Int, Int}}=1_000_000,
-    selection_option::Symbol=:max_weight
+    selection_option::Symbol=:max_weight,
+    weight_option::Symbol=:count
 ) where {S,A,O}
         
     num_agents = problems[1].num_agents
@@ -144,7 +147,7 @@ function Conflation(
     end
     return Conflation(joint_problem, joint_policy, indiv_control, 
         surrogate_beliefs, prune_option, joint_belief_delta, single_belief_delta, 
-        max_surrogate_beliefs, selection_option)
+        max_surrogate_beliefs, selection_option, weight_option, nothing)
 end
 
 # Extended to get alpha vector index back in the info NamedTuple
@@ -220,9 +223,14 @@ function action_info(control::Conflation{S, A, O}) where {S,A,O}
         throw(ArgumentError("Invalid options of `prune_option`: $(control.prune_option)"))
     end
     
+    for ii in 2:num_agents
+        normalize!(control.surrogate_beliefs[ii].weights, 1)
+    end
+    
     # 3. Estimate joint belief from remaining beliefs
     est_joint_b = select_belief(control)
-    
+    control.prev_selected_belief = est_joint_b
+
     return POMDPTools.action_info(control.joint_policy, est_joint_b)
 end
 
@@ -391,14 +399,12 @@ function select_belief(control::Conflation)
     # policy. The in second case, we will be picking the same action, so we don't need to
     # reason over all of them.
     delete_idxs = Int[]
-    value_of_cbs = Vector{Float64}(undef, length(conflated_beliefs))
     for ii in 1:(length(conflated_beliefs) - 1)
         if ii in delete_idxs
             continue
         end
         cb_i = conflated_beliefs[ii]
         a_i, info_i = action_info(control.joint_policy, cb_i)
-        value_of_cbs[ii] = value(control.joint_policy, cb_i)
         alpha_idx_i = info_i.idx
         for jj in (ii + 1):length(conflated_beliefs)
             if jj in delete_idxs
@@ -414,27 +420,69 @@ function select_belief(control::Conflation)
         end 
     end
     
-    value_of_cbs[end] = value(control.joint_policy, conflated_beliefs[end])
-    
     unique!(sort!(delete_idxs))
     deleteat!(conflated_beliefs, delete_idxs)
     deleteat!(weights, delete_idxs)
-    deleteat!(value_of_cbs, delete_idxs)
     
-    # Expected value of conflated beliefs
-    expected_value_of_cbs = value_of_cbs .* weights
     
     #? Select the belief with the largest weight or expected value.
     #? Other ideas might be better here?
     
-    if control.selection_option == :expected_value
-        return conflated_beliefs[argmax(expected_value_of_cbs)]
-    elseif control.selection_option == :max_weight
+    if control.selection_option == :max_weight
         return conflated_beliefs[argmax(weights)]
+    elseif control.selection_option == :expected_value
+        value_of_cbs = Vector{Float64}(undef, length(conflated_beliefs))
+        for ii in 1:length(conflated_beliefs)
+            value_of_cbs[ii] = value(control.joint_policy, conflated_beliefs[ii])
+        end
+        expected_value_of_cbs = value_of_cbs .* weights    
+        return conflated_beliefs[argmax(expected_value_of_cbs)]
+    elseif control.selection_option == :min_entropy
+        entropy_of_cbs = Vector{Float64}(undef, length(conflated_beliefs))
+        for ii in 1:length(conflated_beliefs)
+            entropy_of_cbs[ii] = entropy(conflated_beliefs[ii])
+        end
+        return conflated_beliefs[argmin(entropy_of_cbs)]
+    elseif control.selection_option == :max_entropy
+        entropy_of_cbs = Vector{Float64}(undef, length(conflated_beliefs))
+        for ii in 1:length(conflated_beliefs)
+            entropy_of_cbs[ii] = entropy(conflated_beliefs[ii])
+        end
+        return conflated_beliefs[argmax(entropy_of_cbs)]
+    elseif control.selection_option == :min_l1_dist
+        if isnothing(control.prev_selected_belief)
+            return conflated_beliefs[argmax(weights)]
+        end
+        l1_dists = Vector{Float64}(undef, length(conflated_beliefs))
+        for ii in 1:length(conflated_beliefs)
+            l1_dists[ii] = norm(conflated_beliefs[ii].b - control.prev_selected_belief.b, 1)
+        end
+        return conflated_beliefs[argmin(l1_dists)]
     else
         throw(ArgumentError("Invalid selection option: $(control.selection_option)"))
     end
 end
+
+entropy(b::DiscreteBelief) = entropy(b.b)
+function entropy(b::Vector{Float64})
+    entropy = 0.0
+    for ii in 1:length(b)
+        if b[ii] > 0.0
+            entropy -= b[ii] * log(b[ii])
+        end
+    end
+    return entropy
+end
+function entropy(b::SparseCat)
+    entropy = 0.0
+    for p in b.probs
+        if p > 0.0
+            entropy -= p * log(p)
+        end
+    end
+    return entropy
+end
+
 
 function conflate_beliefs(control::ConflateJoint)
     conflate_beliefs(control.joint_problem, [cp.belief for cp in control.indiv_control])
@@ -512,19 +560,30 @@ function update_belief!(control::Conflation{S, A, O}, act::A, o::O) where {S, A,
         for (ii, b_i) in enumerate(eb.beliefs)
             for o_j in obs
                 try
-                    bp = update(eb.updater, b_i, act, o_j)
-                    if !isempty(new_beliefs)
-                        dists = [norm(bp.b - new_b.b, 1) for new_b in new_beliefs]
-                        min_l1_dist, min_idx = findmin(dists)
+                    if control.weight_option == :count
+                        p_o_b = 1.0
+                    elseif control.weight_option == :observation_probability
+                        p_o_b = observation_probability(eb.problem, b_i, act, o_j)
                     else
-                        min_l1_dist = Inf
+                        throw(ArgumentError("Invalid weight option: $(control.weight_option)"))
                     end
                     
-                    if min_l1_dist <= control.single_belief_delta
-                        new_weights[min_idx] += eb.weights[ii]
-                    else
-                        push!(new_beliefs, bp)
-                        push!(new_weights, eb.weights[ii])
+                    if p_o_b > 0.0
+                        bp = update(eb.updater, b_i, act, o_j)
+                        if !isempty(new_beliefs)
+                            dists = [norm(bp.b - new_b.b, 1) for new_b in new_beliefs]
+                            min_l1_dist, min_idx = findmin(dists)
+                        else
+                            min_l1_dist = Inf
+                        end
+                        
+                        if min_l1_dist <= control.single_belief_delta
+                            new_weights[min_idx] += eb.weights[ii] * p_o_b
+                        else
+                            push!(new_beliefs, bp)
+                            push!(new_weights, eb.weights[ii] * p_o_b)
+                        end
+                        
                     end
                 catch e
                     if isa(e, ErrorException) && occursin("Failed discrete belief update: new probabilities sum to zero.", e.msg)
@@ -536,8 +595,27 @@ function update_belief!(control::Conflation{S, A, O}, act::A, o::O) where {S, A,
             end
         end
         eb.beliefs = new_beliefs
-        eb.weights = new_weights
+        eb.weights = normalize!(new_weights, 1)
     end
+end
+
+function observation_probability(pomdp::POMDP, belief::DiscreteBelief, a, o)
+    obs_prob = 0.0
+    states_list = belief.state_list
+    for sp in states_list  # sp: next state
+        od = observation(pomdp, a, sp)
+        p_o_a_sp = pdf(od, o)
+        if p_o_a_sp > 0.0
+            for (ii, s) in enumerate(states_list)
+                if belief.b[ii] > 0.0
+                    td = transition(pomdp, s, a)
+                    p_sp_s_a = pdf(td, sp)
+                    obs_prob += p_o_a_sp * p_sp_s_a * belief.b[ii]
+                end
+            end
+        end
+    end
+    return obs_prob
 end
 
 function POMDPTools.render(control::MultiAgentControlStrategy, step::NamedTuple)
@@ -672,7 +750,7 @@ function POMDPTools.render(control::Conflation, plot_step::NamedTuple)
         push!(plts, plt_joint)
     end
     
-    conflated_b = select_belief(control)
+    conflated_b = control.prev_selected_belief
     if !isnothing(get(plot_step, :a, nothing))
         plot_step_conflated = (s=plot_step.s, a=plot_step.a, b=conflated_b)
     else
@@ -711,7 +789,9 @@ function POMDPTools.render(control::Conflation, plot_step::NamedTuple)
             elseif num_surrogate_beliefs[jj-1] >= ii
                 eb = control.surrogate_beliefs[jj]
                 ai = action(eb.policy, eb.beliefs[ii])
-                plt = POMDPTools.render(control.joint_problem, (s=plot_step.s, a=ai, b=eb.beliefs[ii]); title_str="\nAgent $jj, Belief $ii")
+                weight = round(eb.weights[ii], digits=2)
+                title_str = "\nAgent $jj, Belief $ii\nWeight: $weight"
+                plt = POMDPTools.render(control.joint_problem, (s=plot_step.s, a=ai, b=eb.beliefs[ii]); title_str=title_str)
                 push!(plts, plt)
             else
                 push!(plts, blank_plt)

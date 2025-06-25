@@ -39,20 +39,65 @@ function get_controller(
             single_belief_delta=delta_single,
             max_surrogate_beliefs=max_beliefs
         )
-    elseif control_option == :conflate_action
-        control = Conflation(joint_problem, joint_policy, agent_problems, agent_policies;
-            prune_option=:action,
-            joint_belief_delta=delta_joint,
-            single_belief_delta=delta_single,
-            max_surrogate_beliefs=max_beliefs
-        )
-    elseif control_option == :conflate_action_expected
+    elseif control_option == :conflate_action_max_weight_count
         control = Conflation(joint_problem, joint_policy, agent_problems, agent_policies;
             prune_option=:action,
             joint_belief_delta=delta_joint,
             single_belief_delta=delta_single,
             max_surrogate_beliefs=max_beliefs,
-            selection_option=:expected_value
+            selection_option=:max_weight,
+            weight_option=:count
+        )
+    elseif control_option == :conflate_action_expected_count
+        control = Conflation(joint_problem, joint_policy, agent_problems, agent_policies;
+            prune_option=:action,
+            joint_belief_delta=delta_joint,
+            single_belief_delta=delta_single,
+            max_surrogate_beliefs=max_beliefs,
+            selection_option=:expected_value,
+            weight_option=:count
+        )
+    elseif control_option == :conflate_action_max_entropy
+        control = Conflation(joint_problem, joint_policy, agent_problems, agent_policies;
+            prune_option=:action,
+            joint_belief_delta=delta_joint,
+            single_belief_delta=delta_single,
+            max_surrogate_beliefs=max_beliefs,
+            selection_option=:max_entropy
+        )
+    elseif control_option == :conflate_action_min_entropy
+        control = Conflation(joint_problem, joint_policy, agent_problems, agent_policies;
+            prune_option=:action,
+            joint_belief_delta=delta_joint,
+            single_belief_delta=delta_single,
+            max_surrogate_beliefs=max_beliefs,
+            selection_option=:min_entropy
+        )
+    elseif control_option == :conflate_action_min_l1_dist
+        control = Conflation(joint_problem, joint_policy, agent_problems, agent_policies;
+            prune_option=:action,
+            joint_belief_delta=delta_joint,
+            single_belief_delta=delta_single,
+            max_surrogate_beliefs=max_beliefs,
+            selection_option=:min_l1_dist
+        )
+    elseif control_option == :conflate_action_max_weight_observation_probability
+        control = Conflation(joint_problem, joint_policy, agent_problems, agent_policies;
+            prune_option=:action,
+            joint_belief_delta=delta_joint,
+            single_belief_delta=delta_single,
+            max_surrogate_beliefs=max_beliefs,
+            selection_option=:max_weight,
+            weight_option=:observation_probability
+        )
+    elseif control_option == :conflate_action_expected_observation_probability
+        control = Conflation(joint_problem, joint_policy, agent_problems, agent_policies;
+            prune_option=:action,
+            joint_belief_delta=delta_joint,
+            single_belief_delta=delta_single,
+            max_surrogate_beliefs=max_beliefs,
+            selection_option=:expected_value,
+            weight_option=:observation_probability
         )
     else
         throw(ArgumentError("Invalid control option: $control_option"))
