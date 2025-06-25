@@ -46,6 +46,14 @@ function get_controller(
             single_belief_delta=delta_single,
             max_surrogate_beliefs=max_beliefs
         )
+    elseif control_option == :conflate_action_expected
+        control = Conflation(joint_problem, joint_policy, agent_problems, agent_policies;
+            prune_option=:action,
+            joint_belief_delta=delta_joint,
+            single_belief_delta=delta_single,
+            max_surrogate_beliefs=max_beliefs,
+            selection_option=:expected_value
+        )
     else
         throw(ArgumentError("Invalid control option: $control_option"))
     end
