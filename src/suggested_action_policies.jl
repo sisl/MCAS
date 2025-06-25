@@ -440,13 +440,13 @@ function select_belief(control::Conflation)
     elseif control.selection_option == :min_entropy
         entropy_of_cbs = Vector{Float64}(undef, length(conflated_beliefs))
         for ii in 1:length(conflated_beliefs)
-            entropy_of_cbs[ii] = entropy(conflated_beliefs[ii])
+            entropy_of_cbs[ii] = my_entropy(conflated_beliefs[ii])
         end
         return conflated_beliefs[argmin(entropy_of_cbs)]
     elseif control.selection_option == :max_entropy
         entropy_of_cbs = Vector{Float64}(undef, length(conflated_beliefs))
         for ii in 1:length(conflated_beliefs)
-            entropy_of_cbs[ii] = entropy(conflated_beliefs[ii])
+            entropy_of_cbs[ii] = my_entropy(conflated_beliefs[ii])
         end
         return conflated_beliefs[argmax(entropy_of_cbs)]
     elseif control.selection_option == :min_l1_dist
@@ -463,24 +463,24 @@ function select_belief(control::Conflation)
     end
 end
 
-entropy(b::DiscreteBelief) = entropy(b.b)
-function entropy(b::Vector{Float64})
-    entropy = 0.0
+my_entropy(b::DiscreteBelief) = my_entropy(b.b)
+function my_entropy(b::Vector{Float64})
+    ent = 0.0
     for ii in 1:length(b)
         if b[ii] > 0.0
-            entropy -= b[ii] * log(b[ii])
+            ent -= b[ii] * log(b[ii])
         end
     end
-    return entropy
+    return ent
 end
-function entropy(b::SparseCat)
-    entropy = 0.0
+function my_ent(b::SparseCat)
+    ent = 0.0
     for p in b.probs
         if p > 0.0
-            entropy -= p * log(p)
+            ent -= p * log(p)
         end
     end
-    return entropy
+    return ent
 end
 
 
