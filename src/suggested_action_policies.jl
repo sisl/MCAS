@@ -113,6 +113,7 @@ struct Conflation{S, A, O} <: MultiAgentControlStrategy
     joint_belief_delta::Float64
     single_belief_delta::Float64
     max_surrogate_beliefs::Dict{Int, Int}
+    selection_option::Symbol
 end
 function Conflation(
     joint_problem::POMDP{S, A, O},
@@ -122,7 +123,8 @@ function Conflation(
     prune_option::Symbol=:alpha,
     joint_belief_delta::Float64=0.0,
     single_belief_delta::Float64=0.0,
-    max_surrogate_beliefs::Union{Int, Dict{Int, Int}}=1_000_000
+    max_surrogate_beliefs::Union{Int, Dict{Int, Int}}=1_000_000,
+    selection_option::Symbol=:max_weight
 ) where {S,A,O}
         
     num_agents = problems[1].num_agents
@@ -142,7 +144,7 @@ function Conflation(
     end
     return Conflation(joint_problem, joint_policy, indiv_control, 
         surrogate_beliefs, prune_option, joint_belief_delta, single_belief_delta, 
-        max_surrogate_beliefs)
+        max_surrogate_beliefs, selection_option)
 end
 
 # Extended to get alpha vector index back in the info NamedTuple
@@ -193,7 +195,7 @@ end
 
 function action_info(control::ConflateJoint)
     # Get conflated belief of all agents
-    joint_conflated_b = conflate_beliefs(control.joint_problem, [cp.belief for cp in control.indiv_control])
+    joint_conflated_b = conflate_beliefs(control)
     return POMDPTools.action_info(control.joint_policy, joint_conflated_b)
 end
 
@@ -356,7 +358,7 @@ function select_belief(control::Conflation)
         indiv_beliefs = vcat(control.indiv_control[1].belief, collect(belief_combinations[ii]))
         
         try
-            push!(conflated_beliefs, conflate_beliefs(control.joint_problem, indiv_beliefs))
+            push!(conflated_beliefs, conflate_beliefs(control, indiv_beliefs))
             push!(weights, prod(weight_combinations[ii]))
             idxs = idx_combinations[ii]
             for jj in 1:(num_agents - 1)
@@ -389,34 +391,56 @@ function select_belief(control::Conflation)
     # policy. The in second case, we will be picking the same action, so we don't need to
     # reason over all of them.
     delete_idxs = Int[]
+    value_of_cbs = Vector{Float64}(undef, length(conflated_beliefs))
     for ii in 1:(length(conflated_beliefs) - 1)
         if ii in delete_idxs
             continue
         end
         cb_i = conflated_beliefs[ii]
-        _, info_i = action_info(control.joint_policy, cb_i)
+        a_i, info_i = action_info(control.joint_policy, cb_i)
+        value_of_cbs[ii] = value(control.joint_policy, cb_i)
         alpha_idx_i = info_i.idx
         for jj in (ii + 1):length(conflated_beliefs)
             if jj in delete_idxs
                 continue
             end
             cb_j = conflated_beliefs[jj]
-            _, info_j = action_info(control.joint_policy, cb_j)
+            a_j, info_j = action_info(control.joint_policy, cb_j)
             alpha_idx_j = info_j.idx
-            if (alpha_idx_i == alpha_idx_j) || (norm(cb_i.b - cb_j.b, 1) <= control.joint_belief_delta)
+            if (a_i == a_j) || (norm(cb_i.b - cb_j.b, 1) <= control.joint_belief_delta)
                 push!(delete_idxs, jj)
                 weights[ii] += weights[jj]
             end
         end 
     end
+    
+    value_of_cbs[end] = value(control.joint_policy, conflated_beliefs[end])
+    
     unique!(sort!(delete_idxs))
     deleteat!(conflated_beliefs, delete_idxs)
     deleteat!(weights, delete_idxs)
+    deleteat!(value_of_cbs, delete_idxs)
     
-    #? Select the belief with the largest weight.
-    #? Other ideas might be better here. Min regret?
+    # Expected value of conflated beliefs
+    expected_value_of_cbs = value_of_cbs .* weights
     
-    return conflated_beliefs[argmax(weights)]
+    #? Select the belief with the largest weight or expected value.
+    #? Other ideas might be better here?
+    
+    if control.selection_option == :expected_value
+        return conflated_beliefs[argmax(expected_value_of_cbs)]
+    elseif control.selection_option == :max_weight
+        return conflated_beliefs[argmax(weights)]
+    else
+        throw(ArgumentError("Invalid selection option: $(control.selection_option)"))
+    end
+end
+
+function conflate_beliefs(control::ConflateJoint)
+    conflate_beliefs(control.joint_problem, [cp.belief for cp in control.indiv_control])
+end
+function conflate_beliefs(control::ConflateJoint, beliefs::Vector)
+    conflate_beliefs(control.joint_problem, beliefs)
 end
 
 function conflate_beliefs(pomdp::POMDP, beliefs::Vector)
@@ -605,7 +629,7 @@ function POMDPTools.render(control::ConflateJoint, plot_step::NamedTuple)
         push!(plts, plt_joint)
     end
     
-    joint_conflated_b = conflate_beliefs(control.joint_problem, [cp.belief for cp in control.indiv_control])
+    joint_conflated_b = conflate_beliefs(control)
     plot_step_joint = (s=plot_step.s, a=plot_step.a, b=joint_conflated_b)
     plt = POMDPTools.render(control.joint_problem, plot_step_joint; title_str="\nConflated Belief")
     push!(plts, plt)
