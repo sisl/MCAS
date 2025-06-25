@@ -122,7 +122,7 @@ function run_simulation(
         if show_plots
             if !isnothing(joint_control)
                 if joint_control isa ConflateJoint
-                    joint_conflated_b = conflate_beliefs(joint_control.joint_problem, [cp.belief for cp in joint_control.indiv_control])
+                    joint_conflated_b = conflate_beliefs(joint_control)
                     plot_step = (s=s, a=act, joint_a=joint_a, joint_b=joint_conflated_b)
                 elseif joint_control isa SinglePolicy || joint_control isa JointPolicy
                     plot_step = (s=s, a=act, joint_a=joint_a, joint_b=joint_control.belief)
