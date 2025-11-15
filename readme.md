@@ -1,8 +1,9 @@
-# Supplementary Materials for Efficient Multiagent Planning via Shared Action Suggestions
+# Supporting Code for Efficient Multiagent Planning via Shared Action Suggestions
 
 This repository contains the code and supplementary materials for the paper "Efficient Multiagent Planning via Shared Action Suggestions".
 
 [arXiv Paper](https://arxiv.org/abs/2412.11430)
+<!-- [AAAI Proceedings]() -->
 
 ## Repository Structure
 
@@ -28,14 +29,29 @@ This repository contains the code and supplementary materials for the paper "Eff
 │       └── MultiAgentPOMDPProblems.jl  # Package definition
 |
 ├── install.jl                        # Installs the package
-├── README.md                         # This file
-├── Project.toml                      # Defines the package requirements
-└── Appendix A.pdf                    # Additional results (average and maximum size of belief sets)
+├── readme.md                         # This file
+└── Project.toml                      # Defines the package requirements
 ```
 
 ## Installation
 
 All of the developement was done with Julia 1.10 and Julia 1.11. We recommend using the most up to date stable release, but it should work with Julia 1.8 or later. You can download Julia [here](https://julialang.org/downloads/).
+
+### Cloning the Repository
+
+This repository uses a git submodule for the `MultiAgentPOMDPProblems` package. To clone the repository with the submodule, use:
+
+```bash
+git clone --recurse-submodules https://github.com/sisl/MCAS.git
+```
+
+If you've already cloned the repository without the submodule, initialize it with:
+
+```bash
+git submodule update --init --recursive
+```
+
+### Setting Up the Julia Environment
 
 To setup your environment, run the following from the root directory:
 
@@ -147,3 +163,14 @@ To recreate all experiments in the paper, run `src/simulation_runner.jl`. This r
 
 
 The csv for the experiments is located at `src/results/results_2024-10-15.csv`. To view the results in a table format, run `src/output_data.jl`.
+
+## Citation
+
+```bib
+@article{asmar2026mcas,
+  title     = {Efficient Multiagent Planning via Shared Action Suggestions},
+  author    = {Dylan M. Asmar and Mykel J. Kochenderfer},
+  booktitle = {AAAI Conference on Artificial Intelligence},
+  year      = {2026}
+}
+```
