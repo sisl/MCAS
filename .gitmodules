@@ -1,0 +1,4 @@
+[submodule "MultiAgentPOMDPProblems"]
+	path = MultiAgentPOMDPProblems
+	url = https://github.com/sisl/MultiAgentPOMDPProblems.jl.git
+	branch = main
