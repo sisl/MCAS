@@ -4,11 +4,5 @@ archive/*
 Manifest.toml
 policy.out
 model.pomdpx
-src/policies/*.jld2
-src/results/*
-*.tex
-Supplementary Material/*
-SupplementaryMaterial.zip
-aamas_abstract.rtf
 *.pdf
 *.zip
